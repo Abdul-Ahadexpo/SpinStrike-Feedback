@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ref, get, update } from 'firebase/database';
+import { ref, get, remove, set, update } from 'firebase/database';
 import { database } from '../../firebase/config';
-import { Star, Send, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Star, Send, CheckCircle, AlertTriangle, Search, User } from 'lucide-react';
 import { toast } from 'react-toastify';
+
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  points: number;
+}
 
 const FeedbackForm: React.FC = () => {
   const { code } = useParams<{ code: string }>();
@@ -18,6 +25,44 @@ const FeedbackForm: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [codeValid, setCodeValid] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  
+  // New state for employee selection
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Fetch employees
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const employeesRef = ref(database, 'employees');
+        const snapshot = await get(employeesRef);
+        
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const employeeList: Employee[] = [];
+          
+          Object.keys(data).forEach(key => {
+            if (data[key].name) {
+              employeeList.push({
+                id: key,
+                name: data[key].name,
+                email: key.replace(/,/g, '.'),
+                points: data[key].points || 0
+              });
+            }
+          });
+          
+          setEmployees(employeeList);
+        }
+      } catch (error) {
+        console.error('Error fetching employees:', error);
+        toast.error('Failed to load employees');
+      }
+    };
+    
+    fetchEmployees();
+  }, []);
 
   // Fetch code data
   useEffect(() => {
@@ -31,7 +76,6 @@ const FeedbackForm: React.FC = () => {
       setLoading(true);
       
       try {
-        // First, find the code in the database
         const codesRef = ref(database, 'codes');
         const snapshot = await get(codesRef);
         
@@ -40,7 +84,6 @@ const FeedbackForm: React.FC = () => {
           let foundCodeKey = null;
           let foundCodeData = null;
           
-          // Find the code that matches
           Object.keys(codes).forEach(key => {
             if (codes[key].code === code) {
               foundCodeKey = key;
@@ -49,17 +92,11 @@ const FeedbackForm: React.FC = () => {
           });
           
           if (foundCodeKey && foundCodeData) {
-            // Check if the code has already been used
-            if (foundCodeData.used) {
-              setCodeValid(false);
-              toast.error('This feedback code has already been used');
-            } else {
-              setCodeData({
-                id: foundCodeKey,
-                ...foundCodeData
-              });
-              setCodeValid(true);
-            }
+            setCodeData({
+              id: foundCodeKey,
+              ...foundCodeData
+            });
+            setCodeValid(true);
           } else {
             setCodeValid(false);
             toast.error('Invalid feedback code');
@@ -80,6 +117,11 @@ const FeedbackForm: React.FC = () => {
     fetchCodeData();
   }, [code]);
 
+  // Filter employees based on search term
+  const filteredEmployees = employees.filter(employee =>
+    employee.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,6 +136,11 @@ const FeedbackForm: React.FC = () => {
       return;
     }
     
+    if (!selectedEmployee) {
+      toast.error('Please select an employee');
+      return;
+    }
+    
     // Verify customer number matches
     if (customerNumber !== codeData.customerNumber) {
       toast.error('Customer number does not match the code');
@@ -103,15 +150,11 @@ const FeedbackForm: React.FC = () => {
     setSubmitting(true);
     
     try {
-      // Mark the code as used
-      await update(ref(database, `codes/${codeData.id}`), {
-        used: true
-      });
-      
-      // Save the feedback
+      // Save the feedback first
+      const selectedEmployeeData = employees.find(emp => emp.id === selectedEmployee);
       const feedbackData = {
-        employeeId: codeData.employeeId,
-        employeeName: codeData.employeeName,
+        employeeId: selectedEmployee,
+        employeeName: selectedEmployeeData?.name,
         customerName: codeData.customerName,
         customerNumber,
         rating,
@@ -119,20 +162,20 @@ const FeedbackForm: React.FC = () => {
         createdAt: Date.now()
       };
       
-      await update(ref(database, `feedback/${codeData.id}`), feedbackData);
-      
       // Update employee points based on rating
       // Higher ratings give more points
       const pointsToAdd = Math.max(1, rating - 1); // 1 star = 1 point, 5 stars = 5 points
       
-      const employeeRef = ref(database, `employees/${codeData.employeeId}`);
+      const employeeRef = ref(database, `employees/${selectedEmployee}`);
       const employeeSnapshot = await get(employeeRef);
       
       if (employeeSnapshot.exists()) {
         const employeeData = employeeSnapshot.val();
         const currentPoints = employeeData.points || 0;
         
-        await update(ref(database, `employees/${codeData.employeeId}`), {
+        await remove(ref(database, `codes/${codeData.id}`)); // Delete the code
+        await set(ref(database, `feedback/${codeData.id}`), feedbackData);
+        await update(ref(database, `employees/${selectedEmployee}`), {
           points: currentPoints + pointsToAdd
         });
       }
@@ -143,6 +186,7 @@ const FeedbackForm: React.FC = () => {
       // Reset form
       setRating(0);
       setComment('');
+      setSelectedEmployee('');
     } catch (error) {
       console.error('Error submitting feedback:', error);
       toast.error('Failed to submit feedback');
@@ -205,7 +249,7 @@ const FeedbackForm: React.FC = () => {
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Customer Feedback</h1>
         <p className="text-gray-600 mt-2">
-          Please share your experience with {codeData?.employeeName}
+          Please share your experience with our team
         </p>
       </div>
       
@@ -238,6 +282,64 @@ const FeedbackForm: React.FC = () => {
             <p className="mt-1 text-sm text-gray-500">
               Please enter the number provided to you by the employee
             </p>
+          </div>
+          
+          {/* Employee Selection */}
+          <div className="pt-4 border-t border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Select Employee
+            </label>
+            
+            <div className="relative mb-4">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input pl-10"
+                placeholder="Search employee by name..."
+              />
+            </div>
+            
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {filteredEmployees.map((employee) => (
+                <label
+                  key={employee.id}
+                  className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
+                    selectedEmployee === employee.id
+                      ? 'bg-primary/10 border border-primary'
+                      : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="employee"
+                    value={employee.id}
+                    checked={selectedEmployee === employee.id}
+                    onChange={(e) => setSelectedEmployee(e.target.value)}
+                    className="sr-only"
+                  />
+                  <User className={`h-5 w-5 mr-3 ${
+                    selectedEmployee === employee.id ? 'text-primary' : 'text-gray-400'
+                  }`} />
+                  <div>
+                    <p className={`font-medium ${
+                      selectedEmployee === employee.id ? 'text-primary' : 'text-gray-900'
+                    }`}>
+                      {employee.name}
+                    </p>
+                  </div>
+                </label>
+              ))}
+              
+              {filteredEmployees.length === 0 && (
+                <div className="text-center py-4 text-gray-500">
+                  No employees found matching your search
+                </div>
+              )}
+            </div>
           </div>
           
           <div className="pt-4 border-t border-gray-200">
