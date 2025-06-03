@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Award, Menu, X, LogOut } from 'lucide-react';
+import { Award, Menu, X, LogOut, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Header: React.FC = () => {
@@ -47,6 +47,16 @@ const Header: React.FC = () => {
               }`}
             >
               Home
+            </Link>
+            
+            <Link
+              to="/feedback"
+              className={`text-sm font-medium transition-colors hover:text-primary flex items-center ${
+                location.pathname === '/feedback' ? 'text-primary' : 'text-gray-600'
+              }`}
+            >
+              <MessageSquare className="h-4 w-4 mr-1" />
+              Submit Feedback
             </Link>
             
             {userRole === 'admin' ? (
@@ -121,6 +131,19 @@ const Header: React.FC = () => {
               onClick={() => setIsMenuOpen(false)}
             >
               Home
+            </Link>
+            
+            <Link
+              to="/feedback"
+              className={`block py-2 text-base font-medium ${
+                location.pathname === '/feedback' ? 'text-primary' : 'text-gray-600'
+              }`}
+              onClick={() => setIsMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <MessageSquare className="h-5 w-5 mr-2" />
+                Submit Feedback
+              </div>
             </Link>
             
             {userRole === 'admin' ? (

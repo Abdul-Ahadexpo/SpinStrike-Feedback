@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "codes": {
+      ".indexOn": "employeeId",
+      ".read": true,
+      ".write": true
+    },
+    "feedback": {
+      ".indexOn": "employeeId",
+      ".read": true,
+      ".write": true
+    },
+    ".read": true,
+    ".write": true
+  }
+}

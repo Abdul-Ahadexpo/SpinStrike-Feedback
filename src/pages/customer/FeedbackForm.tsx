@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ref, get, remove, set, update } from 'firebase/database';
 import { database } from '../../firebase/config';
-import { Star, Send, CheckCircle, AlertTriangle, Search, User } from 'lucide-react';
+import { Star, Send, CheckCircle, AlertTriangle, Search, User, ArrowRight } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Employee {
@@ -13,23 +13,87 @@ interface Employee {
 }
 
 const FeedbackForm: React.FC = () => {
-  const { code } = useParams<{ code: string }>();
+  const { code: urlCode } = useParams<{ code: string }>();
   const navigate = useNavigate();
   
+  const [enteredCode, setEnteredCode] = useState('');
   const [codeData, setCodeData] = useState<any>(null);
   const [customerNumber, setCustomerNumber] = useState('');
   const [rating, setRating] = useState<number>(0);
   const [hoveredRating, setHoveredRating] = useState<number>(0);
   const [comment, setComment] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [codeValid, setCodeValid] = useState(true);
   const [submitted, setSubmitted] = useState(false);
+  const [codeVerified, setCodeVerified] = useState(false);
   
   // New state for employee selection
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Verify feedback code
+  const verifyCode = async (codeToVerify: string) => {
+    if (!codeToVerify) {
+      toast.error('Please enter a feedback code');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      const codesRef = ref(database, 'codes');
+      const snapshot = await get(codesRef);
+      
+      if (snapshot.exists()) {
+        const codes = snapshot.val();
+        let foundCodeKey = null;
+        let foundCodeData = null;
+        
+        Object.keys(codes).forEach(key => {
+          if (codes[key].code === codeToVerify) {
+            foundCodeKey = key;
+            foundCodeData = codes[key];
+          }
+        });
+        
+        if (foundCodeKey && foundCodeData) {
+          setCodeData({
+            id: foundCodeKey,
+            ...foundCodeData
+          });
+          setCodeValid(true);
+          setCodeVerified(true);
+          
+          // If code was from URL, update the URL to include the code
+          if (!urlCode) {
+            navigate(`/feedback/${codeToVerify}`, { replace: true });
+          }
+        } else {
+          setCodeValid(false);
+          toast.error('Invalid feedback code');
+        }
+      } else {
+        setCodeValid(false);
+        toast.error('Invalid feedback code');
+      }
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      setCodeValid(false);
+      toast.error('Error verifying feedback code');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Check URL code on mount
+  useEffect(() => {
+    if (urlCode) {
+      setEnteredCode(urlCode);
+      verifyCode(urlCode);
+    }
+  }, [urlCode]);
 
   // Fetch employees
   useEffect(() => {
@@ -63,59 +127,6 @@ const FeedbackForm: React.FC = () => {
     
     fetchEmployees();
   }, []);
-
-  // Fetch code data
-  useEffect(() => {
-    const fetchCodeData = async () => {
-      if (!code) {
-        setCodeValid(false);
-        setLoading(false);
-        return;
-      }
-      
-      setLoading(true);
-      
-      try {
-        const codesRef = ref(database, 'codes');
-        const snapshot = await get(codesRef);
-        
-        if (snapshot.exists()) {
-          const codes = snapshot.val();
-          let foundCodeKey = null;
-          let foundCodeData = null;
-          
-          Object.keys(codes).forEach(key => {
-            if (codes[key].code === code) {
-              foundCodeKey = key;
-              foundCodeData = codes[key];
-            }
-          });
-          
-          if (foundCodeKey && foundCodeData) {
-            setCodeData({
-              id: foundCodeKey,
-              ...foundCodeData
-            });
-            setCodeValid(true);
-          } else {
-            setCodeValid(false);
-            toast.error('Invalid feedback code');
-          }
-        } else {
-          setCodeValid(false);
-          toast.error('Invalid feedback code');
-        }
-      } catch (error) {
-        console.error('Error fetching code data:', error);
-        setCodeValid(false);
-        toast.error('Error validating feedback code');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchCodeData();
-  }, [code]);
 
   // Filter employees based on search term
   const filteredEmployees = employees.filter(employee =>
@@ -195,11 +206,60 @@ const FeedbackForm: React.FC = () => {
     }
   };
 
+  // Handle code verification form
+  const handleVerifyCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    verifyCode(enteredCode);
+  };
+
   if (loading) {
     return (
       <div className="max-w-md mx-auto text-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
-        <p className="mt-4 text-gray-600">Validating feedback code...</p>
+        <p className="mt-4 text-gray-600">Verifying feedback code...</p>
+      </div>
+    );
+  }
+
+  if (!urlCode && !codeVerified) {
+    return (
+      <div className="max-w-md mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Enter Feedback Code</h1>
+          <p className="text-gray-600 mt-2">
+            Please enter the feedback code provided by the employee
+          </p>
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <form onSubmit={handleVerifyCode} className="space-y-4">
+            <div>
+              <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">
+                Feedback Code
+              </label>
+              <input
+                id="code"
+                type="text"
+                value={enteredCode}
+                onChange={(e) => setEnteredCode(e.target.value.toUpperCase())}
+                className="input"
+                placeholder="Enter your feedback code"
+                maxLength={6}
+              />
+            </div>
+            
+            <button
+              type="submit"
+              className="btn btn-primary w-full flex items-center justify-center"
+              disabled={!enteredCode}
+            >
+              <span className="flex items-center">
+                <ArrowRight className="h-4 w-4 mr-2" />
+                Continue
+              </span>
+            </button>
+          </form>
+        </div>
       </div>
     );
   }
@@ -214,10 +274,14 @@ const FeedbackForm: React.FC = () => {
             This feedback code is invalid or has already been used.
           </p>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => {
+              setCodeVerified(false);
+              setEnteredCode('');
+              navigate('/feedback');
+            }}
             className="btn btn-primary w-full"
           >
-            Return to Home
+            Try Another Code
           </button>
         </div>
       </div>

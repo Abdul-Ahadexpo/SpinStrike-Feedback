@@ -36,9 +36,10 @@ function App() {
             </ProtectedRoute>
           } 
         />
+        <Route path="feedback" element={<FeedbackForm />} />
         <Route path="feedback/:code" element={<FeedbackForm />} />
         <Route path="404" element={<NotFound />} />
-        <Route path="*" element={<Navigate to="/404" replace />} />
+        <Route path="*" element={<Navigate to="/404\" replace />} />
       </Route>
     </Routes>
   );
